@@ -6,6 +6,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
+ecad = "ecad_parse.cli:main"
+# Backwards-compatible per-subcommand entry points.
 ecad-netlist = "ecad_parse.netlist:main"
 ecad-bom = "ecad_parse.bom:main"
 ecad-query = "ecad_parse.query:main"

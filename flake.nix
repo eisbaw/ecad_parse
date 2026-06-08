@@ -63,8 +63,11 @@
         packages.default = ecad-parse;
         packages.ecad-parse = ecad-parse;
 
-        # `nix run` shortcuts
-        apps.default = { type = "app"; program = "${ecad-parse}/bin/ecad-query"; };
+        # `nix run` shortcuts. `apps.default` is the unified `ecad`
+        # dispatcher; the per-subcommand apps remain as direct entry
+        # points for backwards compatibility.
+        apps.default = { type = "app"; program = "${ecad-parse}/bin/ecad"; };
+        apps.ecad    = { type = "app"; program = "${ecad-parse}/bin/ecad"; };
         apps.netlist = { type = "app"; program = "${ecad-parse}/bin/ecad-netlist"; };
         apps.bom     = { type = "app"; program = "${ecad-parse}/bin/ecad-bom"; };
         apps.query   = { type = "app"; program = "${ecad-parse}/bin/ecad-query"; };

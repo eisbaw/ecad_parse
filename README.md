@@ -37,19 +37,36 @@ The CLI accepts either the `<jobname>` dir directly or its parent.
 
 ## Install / run
 
-Pure stdlib — no dependencies. Two ways to invoke:
+Pure stdlib — no dependencies. One unified `ecad` binary with three
+subcommands; per-subcommand binaries (`ecad-netlist`, `ecad-bom`,
+`ecad-query`) remain available for backwards compatibility.
 
 ```bash
 # A) uv (preferred, hermetic venv driven by pyproject.toml)
 uv sync
+uv run ecad netlist <odb-root>
+uv run ecad bom     <odb-root> --format md
+uv run ecad query   <odb-root> net:GND ref:U7 --hops 1 --format json
+
+# Equivalent direct entry points (unchanged):
 uv run ecad-netlist <odb-root>
 uv run ecad-bom     <odb-root> --format md
-uv run ecad-query   <odb-root> net:GND ref:U7 --hops 1 --format json
+uv run ecad-query   <odb-root> net:GND
 
 # B) bare python (no install)
-PYTHONPATH=src python -m ecad_parse.netlist <odb-root>
-PYTHONPATH=src python -m ecad_parse.bom     <odb-root>
-PYTHONPATH=src python -m ecad_parse.query   <odb-root> net:GND
+PYTHONPATH=src python -m ecad_parse.cli netlist <odb-root>
+PYTHONPATH=src python -m ecad_parse.netlist     <odb-root>   # same thing
+PYTHONPATH=src python -m ecad_parse.bom         <odb-root>
+PYTHONPATH=src python -m ecad_parse.query       <odb-root> net:GND
+```
+
+`--help` works at both levels:
+
+```bash
+ecad --help              # top-level: lists subcommands
+ecad netlist --help      # subcommand-specific options
+ecad bom --help
+ecad query --help
 ```
 
 Inside the flake's dev-shell `uv` is already on `$PATH`:
@@ -67,9 +84,10 @@ nix-built artifact matches the deps that `uv sync` installs in the
 dev shell.
 
 ```bash
-nix build                                # -> ./result/bin/ecad-{netlist,bom,query}
-nix run                                  # default app -> ecad-query
-nix run .#netlist -- <odb-root>          # named-app shortcuts (#bom, #query)
+nix build                                # -> ./result/bin/ecad, ecad-{netlist,bom,query}
+nix run                                  # default app -> ecad (the dispatcher)
+nix run .#ecad -- netlist <odb-root>     # explicit dispatcher
+nix run .#netlist -- <odb-root>          # direct per-subcommand apps (#bom, #query)
 ```
 
 Importing into another flake:
@@ -85,7 +103,7 @@ Importing into another flake:
 
 ## Output
 
-### `ecad-netlist`
+### `ecad netlist` (a.k.a. `ecad-netlist`)
 
 Three files are written next to the ODB root by default
 (`netlist.txt`, `netlist_by_refdes.txt`, `netlist.csv`). Override any of
@@ -96,7 +114,7 @@ CSV columns: `net, refdes, pin, side`. Pin names are the real schematic
 names (joined from `eda/data` PKG/PIN definitions), not raw ODB++ 0-based
 pin indices.
 
-### `ecad-bom`
+### `ecad bom` (a.k.a. `ecad-bom`)
 
 One BOM file grouped by a configurable part-number property
 (`--pn-key`, default `MPN`). Components without that property —
@@ -112,7 +130,7 @@ ODB++ exporters disagree on the property name for the part number. If
 your exporter writes something other than `MPN` (some write
 `MFR_PN`, `PART_NUMBER`, or custom names), pass `--pn-key <YOUR_KEY>`.
 
-### `ecad-query` (graph query, AI-friendly)
+### `ecad query` (a.k.a. `ecad-query`) — graph query, AI-friendly
 
 Treats the netlist as a bipartite graph (*nets* ↔ *components*) and
 returns subgraphs by glob pattern + BFS hop-distance. Designed so an
@@ -151,11 +169,11 @@ Knobs:
 Examples:
 
 ```bash
-ecad-query <odb> net:GND                        # what's on GND? (no expansion)
-ecad-query <odb> ref:U7 --hops 1                # U7's immediate neighbours
-ecad-query <odb> ref:U7 --hops 2 --prune-fanout 20  # localised neighbourhood
-ecad-query <odb> 'ref:R*' --format json         # all resistors, structured
-ecad-query <odb> pin:U1.5 --hops 1              # what U1.5 is wired to
+ecad query <odb> net:GND                        # what's on GND? (no expansion)
+ecad query <odb> ref:U7 --hops 1                # U7's immediate neighbours
+ecad query <odb> ref:U7 --hops 2 --prune-fanout 20  # localised neighbourhood
+ecad query <odb> 'ref:R*' --format json         # all resistors, structured
+ecad query <odb> pin:U1.5 --hops 1              # what U1.5 is wired to
 ```
 
 ## Data model

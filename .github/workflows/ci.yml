@@ -36,6 +36,7 @@ jobs:
       - name: --help on each CLI (must succeed and produce >=10 lines)
         run: |
           set -eu
+          # Per-subcommand binaries (backwards-compat).
           for cmd in ecad-netlist ecad-bom ecad-query; do
             echo "================ $cmd --help ================"
             ./result/bin/$cmd --help
@@ -43,17 +44,38 @@ jobs:
             echo "(($cmd --help -> $n lines))"
             test "$n" -ge 10 || { echo "FAIL: help text suspiciously short"; exit 1; }
           done
+          # Unified dispatcher: top-level help, and one --help per subcommand.
+          echo "================ ecad --help ================"
+          ./result/bin/ecad --help
+          n=$(./result/bin/ecad --help | wc -l)
+          test "$n" -ge 5 || { echo "FAIL: ecad --help suspiciously short"; exit 1; }
+          for sub in netlist bom query; do
+            echo "================ ecad $sub --help ================"
+            ./result/bin/ecad "$sub" --help
+            n=$(./result/bin/ecad "$sub" --help | wc -l)
+            test "$n" -ge 10 || { echo "FAIL: ecad $sub --help suspiciously short"; exit 1; }
+            # usage line must reflect the subcommand prog name.
+            ./result/bin/ecad "$sub" --help 2>&1 | head -1 \
+              | grep -q "^usage: ecad $sub" \
+              || { echo "FAIL: ecad $sub --help has wrong usage prog"; exit 1; }
+          done
 
       - name: Missing-args sanity (each CLI errors when called naked)
         run: |
           set -eu
-          for cmd in ecad-netlist ecad-bom ecad-query; do
+          for cmd in ecad-netlist ecad-bom ecad-query ecad; do
             if ./result/bin/$cmd >/dev/null 2>&1; then
               echo "FAIL: $cmd accepted no args (argparse misconfigured?)"
               exit 1
             fi
             echo "  $cmd: errors out as expected"
           done
+          # ecad with an unknown subcommand must also error.
+          if ./result/bin/ecad bogus-subcommand >/dev/null 2>&1; then
+            echo "FAIL: ecad accepted unknown subcommand"
+            exit 1
+          fi
+          echo "  ecad bogus-subcommand: errors out as expected"
 
       - name: nix-run shortcuts resolve to the correct binaries
         run: |
@@ -62,6 +84,9 @@ jobs:
           nix run .#netlist -- --help 2>&1 | head -1 | grep -q '^usage: ecad-netlist'
           nix run .#bom     -- --help 2>&1 | head -1 | grep -q '^usage: ecad-bom'
           nix run .#query   -- --help 2>&1 | head -1 | grep -q '^usage: ecad-query'
-          # Default app -> ecad-query
-          nix run . -- --help 2>&1 | head -1 | grep -q '^usage: ecad-query'
-          echo "  all four nix-run targets resolved correctly"
+          nix run .#ecad    -- --help 2>&1 | head -1 | grep -q '^usage: ecad'
+          # Default app -> ecad (the unified dispatcher)
+          nix run . -- --help 2>&1 | head -1 | grep -q '^usage: ecad <command>'
+          # And a subcommand routed through the dispatcher
+          nix run . -- netlist --help 2>&1 | head -1 | grep -q '^usage: ecad netlist'
+          echo "  all nix-run targets resolved correctly"
