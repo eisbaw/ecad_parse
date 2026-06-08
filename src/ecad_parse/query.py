@@ -300,16 +300,113 @@ def render_json(g: NetlistGraph, seeds, levels, pruned, max_show: int, args, out
 # ----- CLI ---------------------------------------------------------------
 
 
+_QUERY_EPILOG = """\
+When to use this command
+------------------------
+  ecad-query      Narrow, graph-shaped questions about the netlist. Use
+                  when an LLM or script needs only a slice of connectivity
+                  (e.g. "what is U7 wired to", "what's on the GND net")
+                  -- token-efficient and bounded.
+  ecad-netlist    Dump the entire netlist to files. Use when you want all
+                  of it on disk for grep / diff / spreadsheet import.
+  ecad-bom        Group components by part number into a BOM. Different
+                  question entirely.
+
+Pattern syntax: <type>:<glob>, multiple patterns union (OR)
+-----------------------------------------------------------
+  net:GND        exact net
+  net:3V3*       glob over nets (fnmatch syntax)
+  ref:U1         exact component
+  ref:C*         glob over components
+  pin:U1.5       resolves to whichever net pin U1.5 is on
+
+When to use which knob
+----------------------
+  --hops 0   (default)    Just show the matched nodes and their immediate
+                          fanout. Use when you want a roster ("all caps",
+                          "all pins on GND") without graph expansion.
+  --hops 1                One step out: from nets you get their components,
+                          from components you get their other nets. The
+                          most useful "neighbourhood" query depth.
+  --hops 2                Two steps out. Useful for "what subcircuit does
+                          this part belong to". Almost always combine with
+                          --prune-fanout to avoid power-rail explosion.
+  --hops >=3              Diameter of typical boards is ~4-6 hops; setting
+                          large hops effectively reaches the whole board.
+
+  --prune-fanout 50  (default)
+                          BFS stops expanding through nets with more than
+                          50 pins. Keeps power/ground rails from dragging
+                          the entire board into multi-hop queries. Pruned
+                          nets still appear as visited nodes (with their
+                          fanout reported), but their components aren't
+                          enqueued.
+  --prune-fanout 0        Disable pruning (whole-board reach with high
+                          --hops). Use sparingly; output gets huge.
+  --prune-fanout 1000     Effectively disabled, but explicit.
+
+  --max-show 100  (default)
+                          Cap each output section. Internal edges (both
+                          endpoints reached) are listed first so the cap
+                          surfaces the structurally informative ones.
+  --max-show 0            Unlimited. Combine with --format json + a
+                          downstream jq filter for bulk extraction.
+
+  --internal-only         Drop boundary edges (one endpoint outside the
+                          reached set). Output is then a pure topology
+                          description of the induced subgraph. Strongly
+                          recommended for LLM consumers: an LLM asking
+                          "what's around U7?" wants the 20-line local
+                          topology, not 1900 GND-fanout edges.
+
+  --format text  (default)
+                          Human-friendly, indent-based. Internal edges
+                          get a 2-space prefix; boundary edges get "~ ".
+  --format json           Structured payload with full query echo, per-
+                          hop levels, internal/boundary edge counts, and
+                          explicit truncated flags. Use for programmatic
+                          consumers and LLMs.
+
+  --include-none          Include the $NONE$ pseudo-net (unconnected pins).
+                          Off by default because $NONE$ aggregates every
+                          dangling pin on the board and is rarely useful
+                          as a query target.
+
+Examples (with intended use cases)
+----------------------------------
+  ecad-query <odb> net:GND
+      "How many pins are on GND, and which?"  Just hop-0 fanout.
+
+  ecad-query <odb> ref:U7 --hops 1
+      "What is U7 wired to?"  Gives U7's nets + the components sharing
+      those nets.
+
+  ecad-query <odb> ref:U7 --hops 2 --internal-only --prune-fanout 20
+      "What subcircuit does U7 belong to?"  Pruning blocks GND from
+      pulling the whole board in; --internal-only filters output to
+      structurally meaningful edges only. Ideal for LLM consumption.
+
+  ecad-query <odb> pin:C12.1 --hops 2 --internal-only
+      "What does the rail this pin sits on actually do?"  Resolves the
+      pin to its net, then walks two hops to reveal the local power
+      stage / signal chain.
+
+  ecad-query <odb> 'ref:U*' --format json --max-show 0
+      "Enumerate every IC on the board."  JSON output, no truncation.
+
+  ecad-query <odb> net:3V3 net:1V8 --hops 1 --internal-only
+      "Show the local circuitry around the 3V3 and 1V8 rails as a
+      single combined subgraph."  Union of two seeds.
+"""
+
+
+
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
-        epilog=(
-            "Examples:\n"
-            "  ecad-query <odb> net:GND\n"
-            "  ecad-query <odb> ref:U7 --hops 1\n"
-            "  ecad-query <odb> 'ref:U*' --format json\n"
-            "  ecad-query <odb> pin:U1.5 --hops 2 --prune-fanout 30\n"
-        ),
+        epilog=_QUERY_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("odb_root", type=Path,

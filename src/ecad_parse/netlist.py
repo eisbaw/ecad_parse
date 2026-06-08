@@ -101,8 +101,45 @@ def write_csv(out: Path, net_conns, include_none: bool):
                 w.writerow([net, r, p, s])
 
 
+_NETLIST_EPILOG = """\
+When to use this command
+------------------------
+  ecad-netlist    Dump the entire netlist to files. Use when you want the
+                  complete connectivity on disk for grep, diff, or feeding
+                  downstream tools.
+  ecad-bom        Group components into a Bill of Materials by part number.
+  ecad-query      Ask narrow graph-shaped questions (e.g. "what is U7
+                  connected to within 2 hops?") -- much more efficient than
+                  loading the full netlist when you only need a slice.
+
+Default behaviour (no --by-net / --by-refdes / --csv given): writes all
+three outputs (netlist.txt, netlist_by_refdes.txt, netlist.csv) next to
+the ODB++ root. Pass specific flags to control destinations individually.
+
+Output formats
+--------------
+  by-net      <NET>  (N pins) header, then "<refdes>.<pin>  [T|B]" lines.
+              Human-friendly; good for visual inspection or grep "GND".
+  by-refdes   "<refdes>  [side]  VALUE='..' MPN=.." header, then
+              "<pin>  <net>" lines. Useful when you have a refdes in hand
+              and want to know what each pin connects to.
+  csv         RFC-4180 "net,refdes,pin,side" rows. Use for scripted joins,
+              spreadsheet import, or diffing two netlists.
+
+Examples
+--------
+  ecad-netlist <odb-root>                        # write all three next to root
+  ecad-netlist <odb-root> --csv out.csv          # only the CSV, custom path
+  ecad-netlist <odb-root> --include-none         # keep unconnected pins too
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0],
+        epilog=_NETLIST_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("odb_root", type=Path, help="ODB++ job dir (contains misc/, steps/, ...)")
     ap.add_argument("--by-net", type=Path, metavar="PATH",
                     help="output: human-friendly by-net listing")

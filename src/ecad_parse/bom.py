@@ -115,8 +115,47 @@ def write_txt(out: Path, rows):
             f.write(f"    refdeses: {r['refdeses']}\n")
 
 
+_BOM_EPILOG = """\
+When to use this command
+------------------------
+  ecad-bom        Group components into a Bill of Materials by part number.
+                  Use when ordering parts, doing supply-chain analysis, or
+                  comparing what's on the board against a master parts list.
+  ecad-netlist    Dump connectivity (refdes.pin -> net) to files. Different
+                  question entirely; not a substitute.
+  ecad-query      Topology questions ("what's near U7"); also not a BOM.
+
+Critical knob: --pn-key
+-----------------------
+ODB++ exporters disagree on the property name carrying the part number.
+We default to "MPN" (industry-common). If your BOM comes back with a huge
+"<none>" bucket (all components in one group), run "ecad-netlist <odb>
+--by-refdes ..." and inspect the per-component property names ("MFR_PN",
+"PART_NUMBER", or whatever your exporter writes) to learn the right key,
+then re-run with --pn-key <that key>.
+
+Output formats
+--------------
+  csv  (default)  scriptable, full columns including refdeses list
+  md              GitHub-flavoured markdown table, refdeses truncated at
+                  100 chars (looks OK in code review)
+  txt             human-friendly, full refdes lists, monospace-aligned
+
+Examples
+--------
+  ecad-bom <odb-root>                            # csv, default path
+  ecad-bom <odb-root> --format md                # markdown table
+  ecad-bom <odb-root> --pn-key MFR_PN            # exporter uses MFR_PN
+  ecad-bom <odb-root> --out /tmp/board.csv       # explicit destination
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0],
+        epilog=_BOM_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("odb_root", type=Path, help="ODB++ job dir (contains misc/, steps/, ...)")
     ap.add_argument("--out", type=Path, metavar="PATH",
                     help="output file (default: bom.<fmt> next to ODB root)")
