@@ -12,11 +12,22 @@ netlist ODB_ROOT:
 bom ODB_ROOT FORMAT="csv":
     uv run ecad-bom {{ODB_ROOT}} --format {{FORMAT}}
 
-# Smoke-test against a local ODB tree (set ODB to point at your job dir)
-smoke ODB:
+# Smoke-test all three CLIs against a local ODB tree. SEED defaults to
+# net:GND (universally present); override for board-specific patterns,
+# e.g. `just smoke /path/to/odb ref:U7`.
+smoke ODB SEED='net:GND':
     uv run ecad-netlist {{ODB}}
     uv run ecad-bom {{ODB}} --format csv
     uv run ecad-bom {{ODB}} --format md --out {{ODB}}/../bom.md
+    uv run ecad-query {{ODB}} '{{SEED}}' --max-show 5
+    uv run ecad-query {{ODB}} '{{SEED}}' --hops 1 --internal-only --max-show 10
+    uv run ecad-query {{ODB}} '{{SEED}}' --format json --max-show 0 > /tmp/ecad_query_smoke.json
+    @echo "  JSON smoke result -> /tmp/ecad_query_smoke.json"
+
+# Build the nix derivation (default.nix). Sanity-checks that the package
+# packages cleanly even outside the uv dev shell.
+nix-build:
+    nix-build --no-out-link
 
 # Remove the local venv
 clean:
