@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref; new pushes cancel in-flight runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Determinate Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable magic-nix-cache (substituter + binary cache)
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: nix flake check
+        run: nix flake check --print-build-logs
+
+      - name: Build (flake -> uv2nix -> virtualenv)
+        run: nix build --print-build-logs
+
+      - name: List built artifacts
+        run: ls -la result/bin/
+
+      - name: --help on each CLI (must succeed and produce >=10 lines)
+        run: |
+          set -eu
+          for cmd in ecad-netlist ecad-bom ecad-query; do
+            echo "================ $cmd --help ================"
+            ./result/bin/$cmd --help
+            n=$(./result/bin/$cmd --help | wc -l)
+            echo "(($cmd --help -> $n lines))"
+            test "$n" -ge 10 || { echo "FAIL: help text suspiciously short"; exit 1; }
+          done
+
+      - name: Missing-args sanity (each CLI errors when called naked)
+        run: |
+          set -eu
+          for cmd in ecad-netlist ecad-bom ecad-query; do
+            if ./result/bin/$cmd >/dev/null 2>&1; then
+              echo "FAIL: $cmd accepted no args (argparse misconfigured?)"
+              exit 1
+            fi
+            echo "  $cmd: errors out as expected"
+          done
+
+      - name: nix-run shortcuts resolve to the correct binaries
+        run: |
+          set -eu
+          # Each named app should print its own usage line.
+          nix run .#netlist -- --help 2>&1 | head -1 | grep -q '^usage: ecad-netlist'
+          nix run .#bom     -- --help 2>&1 | head -1 | grep -q '^usage: ecad-bom'
+          nix run .#query   -- --help 2>&1 | head -1 | grep -q '^usage: ecad-query'
+          # Default app -> ecad-query
+          nix run . -- --help 2>&1 | head -1 | grep -q '^usage: ecad-query'
+          echo "  all four nix-run targets resolved correctly"
