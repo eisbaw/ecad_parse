@@ -60,6 +60,29 @@ uv sync
 just smoke <odb-root>
 ```
 
+### Nix build
+
+Flakes-only. The flake uses `uv2nix` to read `uv.lock`, so the
+nix-built artifact matches the deps that `uv sync` installs in the
+dev shell.
+
+```bash
+nix build                                # -> ./result/bin/ecad-{netlist,bom,query}
+nix run                                  # default app -> ecad-query
+nix run .#netlist -- <odb-root>          # named-app shortcuts (#bom, #query)
+```
+
+Importing into another flake:
+
+```nix
+{
+  inputs.ecad-parse.url = "github:eisbaw/ecad_parse";
+  outputs = { self, nixpkgs, ecad-parse, ... }: {
+    packages.x86_64-linux.default = ecad-parse.packages.x86_64-linux.default;
+  };
+}
+```
+
 ## Output
 
 ### `ecad-netlist`
