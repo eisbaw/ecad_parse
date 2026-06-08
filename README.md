@@ -44,10 +44,12 @@ Pure stdlib — no dependencies. Two ways to invoke:
 uv sync
 uv run ecad-netlist <odb-root>
 uv run ecad-bom     <odb-root> --format md
+uv run ecad-query   <odb-root> net:GND ref:U7 --hops 1 --format json
 
 # B) bare python (no install)
 PYTHONPATH=src python -m ecad_parse.netlist <odb-root>
 PYTHONPATH=src python -m ecad_parse.bom     <odb-root>
+PYTHONPATH=src python -m ecad_parse.query   <odb-root> net:GND
 ```
 
 Inside the flake's dev-shell `uv` is already on `$PATH`:
@@ -86,6 +88,48 @@ typically `MEC*` mechanicals / fiducials — collapse into a single
 ODB++ exporters disagree on the property name for the part number. If
 your exporter writes something other than `MPN` (some write
 `MFR_PN`, `PART_NUMBER`, or custom names), pass `--pn-key <YOUR_KEY>`.
+
+### `ecad-query` (graph query, AI-friendly)
+
+Treats the netlist as a bipartite graph (*nets* ↔ *components*) and
+returns subgraphs by glob pattern + BFS hop-distance. Designed so an
+LLM or other script can ask narrow questions without dragging the
+entire board into the answer.
+
+Pattern syntax is `<type>:<glob>`, multiple patterns union:
+
+| pattern | meaning |
+|---|---|
+| `net:GND` | exact net |
+| `net:3V3*` | glob over nets |
+| `ref:U1` | exact component |
+| `ref:C*` | glob over components |
+| `pin:U1.5` | resolves to whichever net pin U1.5 is on |
+
+Knobs:
+
+- `--hops N` — BFS expansion (default 0 = just the matches)
+- `--prune-fanout N` — BFS skips through nets with more than N pins
+  (default 50). Prevents power rails like `GND` from dominating
+  multi-hop queries. Set to `0` to disable.
+- `--max-show N` — cap nodes/edges shown per section (default 100;
+  `0` for unlimited). Internal edges (both endpoints in the reached
+  set) are listed first so the cap surfaces the structurally
+  informative ones.
+- `--format {text,json}` — `text` (default) for humans, `json` for
+  machine consumers. JSON includes the full query echo, stats with
+  internal/boundary edge counts, levels per hop, and explicit
+  `truncated: true` flags when caps fire.
+
+Examples:
+
+```bash
+ecad-query <odb> net:GND                        # what's on GND? (no expansion)
+ecad-query <odb> ref:U7 --hops 1                # U7's immediate neighbours
+ecad-query <odb> ref:U7 --hops 2 --prune-fanout 20  # localised neighbourhood
+ecad-query <odb> 'ref:R*' --format json         # all resistors, structured
+ecad-query <odb> pin:U1.5 --hops 1              # what U1.5 is wired to
+```
 
 ## Data model
 

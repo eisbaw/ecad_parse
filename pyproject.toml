@@ -8,6 +8,7 @@ dependencies = []
 [project.scripts]
 ecad-netlist = "ecad_parse.netlist:main"
 ecad-bom = "ecad_parse.bom:main"
+ecad-query = "ecad_parse.query:main"
 
 [build-system]
 requires = ["hatchling"]
