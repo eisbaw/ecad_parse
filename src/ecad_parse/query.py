@@ -200,7 +200,8 @@ def _node_str(node: Node) -> str:
     return f"{node[0]}:{node[1]}"
 
 
-def render_text(g: NetlistGraph, seeds, levels, pruned, max_show: int, out):
+def render_text(g: NetlistGraph, seeds, levels, pruned, max_show: int,
+                internal_only: bool, out):
     out.write(f"# {len(seeds)} seed(s) -> {sum(len(l) for l in levels)} nodes across "
               f"{len(levels)} hop(s), prune_fanout pruned {len(pruned)} net(s)\n\n")
     for hop, nodes in enumerate(levels):
@@ -224,8 +225,14 @@ def render_text(g: NetlistGraph, seeds, levels, pruned, max_show: int, out):
     all_nodes = [n for level in levels for n in level]
     edges = g.edges_touching(all_nodes)
     n_internal = sum(1 for e in edges if e[3])
-    out.write(f"## edges  ({len(edges)} total: {n_internal} internal + "
-              f"{len(edges) - n_internal} boundary)\n")
+    n_boundary = len(edges) - n_internal
+    if internal_only:
+        edges = [e for e in edges if e[3]]
+        out.write(f"## edges  ({n_internal} internal; "
+                  f"{n_boundary} boundary suppressed by --internal-only)\n")
+    else:
+        out.write(f"## edges  ({len(edges)} total: {n_internal} internal + "
+                  f"{n_boundary} boundary)\n")
     for net, refdes, pin, is_int in (edges[:max_show] if max_show > 0 else edges):
         marker = "  " if is_int else "~ "  # ~ = boundary (one endpoint outside reached set)
         out.write(f"  {marker}net:{net}  <->  ref:{refdes}.{pin}\n")
@@ -236,8 +243,10 @@ def render_text(g: NetlistGraph, seeds, levels, pruned, max_show: int, out):
 def render_json(g: NetlistGraph, seeds, levels, pruned, max_show: int, args, out):
     all_nodes = [n for level in levels for n in level]
     edges = g.edges_touching(all_nodes)
-    edges_shown = edges[:max_show] if max_show > 0 else edges
     n_internal = sum(1 for e in edges if e[3])
+    if args.internal_only:
+        edges = [e for e in edges if e[3]]
+    edges_shown = edges[:max_show] if max_show > 0 else edges
 
     payload = {
         "query": {
@@ -256,8 +265,9 @@ def render_json(g: NetlistGraph, seeds, levels, pruned, max_show: int, args, out
             "pruned_nets":      len(pruned),
             "edges_total":      len(edges),
             "edges_internal":   n_internal,
-            "edges_boundary":   len(edges) - n_internal,
+            "edges_boundary":   (0 if args.internal_only else len(edges) - n_internal),
             "edges_shown":      len(edges_shown),
+            "internal_only":    args.internal_only,
             "truncated":        len(edges) > len(edges_shown),
         },
         "seeds": [
@@ -319,6 +329,11 @@ def main(argv: list[str] | None = None) -> int:
                          "(default: 100; use 0 for unlimited)")
     ap.add_argument("--include-none", action="store_true",
                     help="include the $NONE$ pseudo-net (unconnected pins)")
+    ap.add_argument("--internal-only", action="store_true",
+                    help="drop boundary edges (one endpoint outside the reached "
+                         "set). Output then describes only the topology of the "
+                         "induced subgraph -- useful when an LLM needs the "
+                         "structure but not the fanout")
     args = ap.parse_args(argv)
 
     root = find_odb_root(args.odb_root)
@@ -341,7 +356,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "json":
         render_json(g, seeds, levels, pruned, args.max_show, args, sys.stdout)
     else:
-        render_text(g, seeds, levels, pruned, args.max_show, sys.stdout)
+        render_text(g, seeds, levels, pruned, args.max_show,
+                    args.internal_only, sys.stdout)
     return 0
 
 

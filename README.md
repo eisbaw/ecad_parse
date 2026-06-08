@@ -116,6 +116,10 @@ Knobs:
   `0` for unlimited). Internal edges (both endpoints in the reached
   set) are listed first so the cap surfaces the structurally
   informative ones.
+- `--internal-only` — drop boundary edges entirely. The output then
+  describes only the induced subgraph's topology, ignoring fanout
+  to outside nodes. Useful for LLM consumers that want the structure
+  without the noise.
 - `--format {text,json}` — `text` (default) for humans, `json` for
   machine consumers. JSON includes the full query echo, stats with
   internal/boundary edge counts, levels per hop, and explicit
